@@ -19,6 +19,10 @@ Slack 으로 보고한다.
 
 기업 고유번호(CORP_CODE) 조회
   python3 dart_insider_report.py --resolve "삼성전자"
+
+오늘(또는 지정일) 임원·주요주주 매매 공시가 접수된 기업 전체 목록
+  python3 dart_insider_report.py --today-list           # KST 기준 오늘
+  python3 dart_insider_report.py --today-list 20260622  # 특정일 지정
 """
 
 import io
@@ -44,6 +48,69 @@ def _http_get(url):
 
 def yesterday_kst():
     return (datetime.now(KST) - timedelta(days=1)).strftime("%Y%m%d")
+
+
+def today_kst():
+    return datetime.now(KST).strftime("%Y%m%d")
+
+
+# 임원ㆍ주요주주 특정증권등 소유상황보고서 (지분공시 상세유형)
+INSIDER_DETAIL_TY = "D002"
+
+
+def fetch_disclosure_list(api_key, date_str):
+    """list.json 으로 해당 일자에 접수된 임원·주요주주 매매 공시를 모두 조회.
+
+    페이지네이션을 끝까지 따라가며 전체 공시 목록(list[dict])을 반환한다.
+    """
+    items = []
+    page_no = 1
+    while True:
+        params = urllib.parse.urlencode(
+            {
+                "crtfc_key": api_key,
+                "bgn_de": date_str,
+                "end_de": date_str,
+                "pblntf_detail_ty": INSIDER_DETAIL_TY,
+                "page_no": page_no,
+                "page_count": 100,
+            }
+        )
+        raw = _http_get(f"{DART_BASE}/list.json?{params}")
+        data = json.loads(raw.decode("utf-8"))
+        status = data.get("status")
+        if status == "013":  # 조회된 데이터가 없습니다
+            break
+        if status != "000":
+            raise RuntimeError(f"DART API 오류 [{status}] {data.get('message')}")
+        items.extend(data.get("list", []))
+        if page_no >= int(data.get("total_page", 1)):
+            break
+        page_no += 1
+    return items
+
+
+def summarize_companies(disclosures):
+    """공시 목록을 기업 단위로 묶어 (기업명, 고유번호, 종목코드, 건수) 리스트 반환."""
+    by_corp = {}
+    for d in disclosures:
+        code = (d.get("corp_code") or "").strip()
+        entry = by_corp.setdefault(
+            code,
+            {
+                "corp_name": (d.get("corp_name") or "").strip(),
+                "stock_code": (d.get("stock_code") or "").strip(),
+                "count": 0,
+            },
+        )
+        entry["count"] += 1
+    rows = [
+        (v["corp_name"], code, v["stock_code"], v["count"])
+        for code, v in by_corp.items()
+    ]
+    # 공시 건수 많은 순 → 기업명 순
+    rows.sort(key=lambda r: (-r[3], r[0]))
+    return rows
 
 
 def fetch_insider_reports(api_key, corp_code):
@@ -206,6 +273,22 @@ def main(argv):
         for corp_name, corp_code, stock in resolve_corp_code(api_key, argv[2]):
             tag = f"종목 {stock}" if stock else "비상장"
             print(f"{corp_code}  {corp_name}  ({tag})")
+        return
+
+    if len(argv) >= 2 and argv[1] == "--today-list":
+        if not api_key:
+            sys.exit("DART_API_KEY 환경변수가 필요합니다.")
+        date_str = argv[2] if len(argv) >= 3 else today_kst()
+        disclosures = fetch_disclosure_list(api_key, date_str)
+        rows = summarize_companies(disclosures)
+        pretty = f"{date_str[0:4]}-{date_str[4:6]}-{date_str[6:8]}"
+        if not rows:
+            print(f"{pretty} 접수된 임원·주요주주 매매 공시가 없습니다.")
+            return
+        print(f"=== {pretty} 임원·주요주주 매매 공시 기업 ({len(rows)}개사 / 공시 {len(disclosures)}건) ===")
+        print(f"{'고유번호':>8}  {'종목코드':>6}  공시  기업명")
+        for corp_name, corp_code, stock, count in rows:
+            print(f"{corp_code:>8}  {stock or '-':>6}  {count:>3}  {corp_name}")
         return
 
     if not api_key:

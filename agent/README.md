@@ -21,6 +21,19 @@ DART_API_KEY=발급키 python3 dart_insider_report.py --resolve "삼성전자"
 # 00126380  삼성전자  (종목 005930)
 ```
 
+### 오늘 매매 공시가 있는 기업 전체 목록 (대상 후보 탐색)
+오늘(또는 지정일) 임원·주요주주 매매 공시가 접수된 **모든 기업**을 한눈에 봅니다.
+여기서 관심 기업의 고유번호를 골라 `CORP_CODE` 에 등록하세요.
+
+```bash
+DART_API_KEY=발급키 python3 dart_insider_report.py --today-list           # KST 기준 오늘
+DART_API_KEY=발급키 python3 dart_insider_report.py --today-list 20260622  # 특정일 지정
+# === 2026-06-22 임원·주요주주 매매 공시 기업 (12개사 / 공시 27건) ===
+# 고유번호    종목코드  공시  기업명
+# 00126380  005930    3  삼성전자
+# ...
+```
+
 ### Slack 전송 설정 (둘 중 하나)
 - **봇 토큰**: Slack 앱 생성 → `chat:write` 권한 → `xoxb-` 토큰을 `SLACK_BOT_TOKEN` 으로 사용.
   본인 DM 으로 받으려면 `SLACK_CHANNEL=U0AQ01K6GCB` (기본값). 봇이 DM 을 보낼 수 있도록
